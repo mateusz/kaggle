@@ -124,6 +124,7 @@ for epoch in range(9999):
 # 01j: kernel=5/5/3/1, val: 0.00001260, acc=0.99309524, nice.
 # 01k: 01j, but 1-conv doubles the channels, val: 0.00001725, acc=0.99404762, also good.
 # 01l: 01k, but double channels, no improvement.
+# 01m: normalise data. No improvement.
 
 # so far 01k is the best, and we are probably going into validation overfit.
 # might be good to preprocess the data - move around, shear, rotate
