@@ -60,7 +60,7 @@ for epoch in range(9999):
 
         running_loss += loss.item()
         if i % report_steps == report_steps-1:
-            print("train: %.4f" % (running_loss/float(report_steps)))
+            print("train: %.8f" % (running_loss/float(report_steps)))
             running_loss = 0.0
 
     net.eval()
@@ -93,5 +93,5 @@ for epoch in range(9999):
 
 # Notes
 # 02a: val: 0.0010, acc=0.983810 (without batchnorm)
-# 02b: add batchnorm,
+# 02b: add batchnorm, val: 0.00008603, acc=0.98714286 (comparable with 01, abandon)
 

@@ -1,6 +1,7 @@
 #%%
 
 import src.mnist_dataset as dataset
+import src.cbam as cbam
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 import pandas as pd
@@ -24,30 +25,36 @@ val = DataLoader(v, batch_size=1024, shuffle=True)
 print(len(train), len(val))
 #%%
 
+ch = 64
 net = nn.Sequential(
     nn.Unflatten(1, (1,28,28)),
-    nn.Conv2d(1, 32, 3),
-    nn.BatchNorm2d(32),
+
+    nn.Conv2d(1, ch, 5),
+    nn.BatchNorm2d(ch),
     nn.ReLU(inplace=True),
     nn.MaxPool2d(2),   
 
-    nn.Conv2d(32, 64, 3),
-    nn.BatchNorm2d(64),
+    nn.Conv2d(ch, ch*2, 5),
+    nn.BatchNorm2d(ch*2),
     nn.ReLU(inplace=True),
     nn.MaxPool2d(2),   
 
-    nn.Conv2d(64, 128, 3),
-    nn.BatchNorm2d(128),
+    nn.Conv2d(ch*2, ch*4, 3),
+    nn.BatchNorm2d(ch*4),
     nn.ReLU(inplace=True),
     nn.MaxPool2d(2),   
+
+    nn.Conv2d(ch*4, ch*8, 1),
+    nn.BatchNorm2d(ch*8),
+    nn.ReLU(inplace=True),
 
     nn.Flatten(),
 
-    nn.Linear(128,10),
+    nn.Linear(ch*8,10),
 ).to(device)
-mname = '01c'
+mname = '01-' #k
 
-net(t[0]['data'].unsqueeze(dim=0)).shape
+net(t[0:2]['data']).shape
 
 #%%
 
@@ -70,7 +77,7 @@ for epoch in range(9999):
 
         running_loss += loss.item()
         if i % report_steps == report_steps-1:
-            print("train: %.4f" % (running_loss/float(report_steps)))
+            print("train: %.8f" % (running_loss/float(report_steps)))
             running_loss = 0.0
 
     net.eval()
@@ -83,11 +90,12 @@ for epoch in range(9999):
             loss = lossfn(pred, labels)
             total_loss += loss.item()
 
-            p = torch.argmax(torch.softmax(pred, dim=1), dim=1)
+            p = torch.argmax(pred, dim=1)
             total_correct += (labels==p).sum()
 
     vl = running_loss/float(len(val))
-    print("val: %.6f, acc=%.8f" % (vl, float(total_correct)/float(len(v))))
+    acc = float(total_correct)/float(len(v))
+    print("val: %.8f, acc=%.8f" % (vl, acc))
 
     if vl<min_val_loss:
         min_val_loss = vl
@@ -107,4 +115,15 @@ for epoch in range(9999):
 # 01a: add dense 64 with ReLU, val: 0.0134, acc=0.973333
 # 01b: back to 01, double the channels to 32, val: 0.0005, acc=0.981190
 # 01c: 01b, but add batch norm2d, val: 0.0000, acc=0.988095
+# 01d: try smaller batches, val: 0.00002708, acc=0.98714286
+# 01e: back to 01c, try targeting accuracy, val: 0.00183393, acc=0.98904762, not much better, probably overfits, back to 01c
+# 01f: 01c, but add extra layer (1-conv), val: 0.00004327, acc=0.98976190, replicable improvement
+# 01g: 01f, but one more 1-conv, val: 0.00010783, acc=0.98785714, worse.
+# 01h: 01f but double the channels again, val: 0.00001253, acc=0.99119048 - nice!
+# 01i: swish. Nope.
+# 01j: kernel=5/5/3/1, val: 0.00001260, acc=0.99309524, nice.
+# 01k: 01j, but 1-conv doubles the channels, val: 0.00001725, acc=0.99404762, also good.
+# 01l: 01k, but double channels, no improvement.
 
+# so far 01k is the best, and we are probably going into validation overfit.
+# might be good to preprocess the data - move around, shear, rotate
