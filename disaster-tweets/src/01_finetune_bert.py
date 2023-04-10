@@ -60,10 +60,10 @@ for epoch in range(4):
         opt.zero_grad()
         o = net(
             input_ids=data['input_ids'],
-            attention_mask=data['attention_mask'],
-            labels=F.one_hot(data['labels'].long(), num_classes=2).float()
+            attention_mask=data['attention_mask']
         ).logits
-        loss = lossfn(o, )
+        
+        loss = lossfn(o, F.one_hot(data['labels'].long(), num_classes=2).float())
         loss.backward()
         opt.step()
 
