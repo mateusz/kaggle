@@ -17,7 +17,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class TwitterDataset(Dataset):
     def __init__(self, path):
-        d = pd.read_csv(path).iloc[:2048]
+        d = pd.read_csv(path)#.iloc[:2048]
         tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased', do_lower_case=True)
         t = tokenizer(d['text'].to_list(), padding='longest').convert_to_tensors('pt')
         self.input_ids = t['input_ids'].to(device)
@@ -49,11 +49,14 @@ net = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncas
 #%%
 
 report_steps = 5
-opt = torch.optim.Adam(net.parameters())
+opt = torch.optim.Adam(
+    net.parameters(),
+    lr = 1e-5
+)
 lossfn = nn.CrossEntropyLoss()
 
 torch.cuda.empty_cache()
-for epoch in range(4):
+for epoch in range(2):
     net.train()
     running_loss = 0.0
     for i, data in enumerate(train, 0):
