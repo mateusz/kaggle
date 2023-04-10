@@ -52,9 +52,10 @@ net = nn.Sequential(
 
     nn.Linear(ch*8,10),
 ).to(device)
-mname = '01-' #k
+mname = '01m'
 
 net(t[0:2]['data']).shape
+print(t[0]['data'])
 
 #%%
 

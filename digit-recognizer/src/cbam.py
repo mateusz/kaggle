@@ -33,14 +33,15 @@ class SpatialAttention(nn.Module):
         return self.sigmoid(x)
 
 class ConvBlock(nn.Module):
-    def __init__(self, ch_from, ch_to):
+    def __init__(self, ch_from, ch_to, kernel=3, maxpool=2):
         super().__init__()
-        self.conv = nn.Conv2d(ch_from, ch_to, 3)
+        self.conv = nn.Conv2d(ch_from, ch_to, kernel)
         self.bn = nn.BatchNorm2d(ch_to)
         self.relu = nn.ReLU(inplace=True)
         self.ca = ChannelAttention(ch_to)
         self.sa = SpatialAttention()
-        self.mp = nn.MaxPool2d(2)
+        self.maxpool = maxpool
+        self.mp = nn.MaxPool2d(maxpool)
 
     def forward(self, x):
         x = self.conv(x)
@@ -48,5 +49,6 @@ class ConvBlock(nn.Module):
         x = self.relu(x)
         x = self.ca(x) * x
         x = self.sa(x) * x
-        x = self.mp(x)
+        if self.maxpool>1:
+            x = self.mp(x)
         return x
