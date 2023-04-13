@@ -40,13 +40,13 @@ def cleanup(t):
     t = re.sub(r' *$', '', t)
     return t
 
-prompt = "This document gives examples how to recognise tweets about disasters.\n\n"
+prompt = "Document classifying messages as related to disasters:\n\n"
 
 for i,r in train.iterrows():
     if r['target']==1:
-        suffix = "is classified as: disaster"
+        suffix = "describes a disaster."
     else:
-        suffix = "is classified as: not a disaster"
+        suffix = "does not."
 
     prompt += "\"%s\" %s\n" % (cleanup(r['text']), suffix)
 
@@ -62,16 +62,17 @@ print(force_words_ids)
 #%%
 model = model.to(device)
 token_disaster = tokenizer("disaster", add_prefix_space=True, add_special_tokens=False).input_ids[0]
-token_regular = tokenizer("not a disaster", add_prefix_space=True, add_special_tokens=False).input_ids[0]
 for i,r in val.sample(n=4).iterrows():
-    inp = "%s %s\"%s\" is classified as: " % (tokenizer.bos_token, prompt, cleanup(r['text']))
+    inp = "%s\"%s\" describes " % (prompt, cleanup(r['text']))
     
     t = tokenizer(inp, return_tensors="pt")
     in_len = len(t.input_ids[0])
-    print(in_len)
-    outputs = model(
+    outputs = model.generate(
         t.input_ids.to(device),
         attention_mask=t.attention_mask.to(device),
+        max_new_tokens=1,
+        return_dict_in_generate=True,
+        output_scores=True,
         #num_beams=3,
         #do_sample=False,
         #force_words_ids=force_words_ids,
@@ -79,12 +80,10 @@ for i,r in val.sample(n=4).iterrows():
         #no_repeat_ngram_size=1,
         #remove_invalid_values=True,
     )
-    print(len(outputs[0][0]))
-    dis = outputs[0][0][-1][token_disaster]
-    reg = outputs[0][0][-1][token_regular]
+
     print(cleanup(r['text']))
-    if dis>reg:
-        print("-> disaster (disaster=%.3f, regular=%.3f)" % (dis, reg))
-    else:
-        print("-> regular (disaster=%.3f, regular=%.3f)" % (dis, reg))
+    for s in outputs.scores:
+        print(s[0][token_disaster])
+    #outputs
+    #print(tokenizer.decode(outputs.scores[5].argmax()))
     break
