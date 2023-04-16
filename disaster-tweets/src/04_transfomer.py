@@ -61,7 +61,7 @@ class TwitterDataset(Dataset):
 d = TwitterDataset('data/train.csv', tokenizer)
 max_len = len(d[0]['input_ids'])
 
-batch_size = 256
+batch_size = 40
 t,v = torch.utils.data.random_split(d, [0.9, 0.1])
 train = DataLoader(t, batch_size=batch_size, shuffle=True)
 val = DataLoader(v, batch_size=batch_size)
@@ -210,12 +210,12 @@ net = TransformerEncoder(
     max_len=max_len,
     device=device,
     num_layers=2,
-    dim_model=128,
-    num_heads=6,
-    dim_feedforward=128,
+    dim_model=32,
+    num_heads=2,
+    dim_feedforward=32,
     dim_out=1,
-    dropout=0.3,
-    dim_head=128,
+    dropout=0.1,
+    dim_head=32,
 )
 seq = torch.randint(0, len(tokenizer.get_vocab()), (1, max_len)).long().to(device)
 net(seq)
@@ -232,7 +232,7 @@ warmup_epochs = 20
 
 #def calc_lr(step, dim_embed, warmup_steps):
 #opt = torch.optim.Adam(net.parameters(), betas = (0.9, 0.98), eps = 1.0e-9)
-opt = torch.optim.Adam(net.parameters(), lr=1e-5)
+opt = torch.optim.Adam(net.parameters(), lr=1e-4)
 lossfn = nn.BCELoss()
 #scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[2,4], gamma=0.1)
 #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=10, cooldown=10)
