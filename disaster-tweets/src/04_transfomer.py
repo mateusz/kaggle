@@ -6,7 +6,7 @@ from torch import Tensor
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
-from torch.utils.data import DataLoader, TensorDataset, Dataset
+from torch.utils.data import DataLoader, TensorDataset, Dataset, WeightedRandomSampler
 import numpy as np
 import pandas as pd
 from transformers import GPT2Tokenizer
@@ -33,13 +33,22 @@ def cleanup(t):
     t = re.sub(r'[^A-Za-z0-9- ]', '', t)
     t = re.sub(r'^ *', '', t)
     t = re.sub(r' *$', '', t)
+    t = t.lower()
     return t
 
 class TwitterDataset(Dataset):
-    def __init__(self, path, tokenizer):
+    def __init__(self, path, tokenizer, token_dropout=0.1):
+        self.token_dropout = token_dropout
         d = pd.read_csv(path)#.iloc[:2048]
+
+        c1w = 1.0/len(d[d['target']==0])
+        c2w = 1.0/len(d[d['target']!=0])
+        d.loc[d['target']==0, 'weight'] = c1w
+        d.loc[d['target']!=0, 'weight'] = c2w
+        self.weights = d['weight']
+
         t = d['text']
-        #t = t.apply(cleanup)
+        t = t.apply(cleanup)
         t = tokenizer(t.to_list(), padding='longest').convert_to_tensors('pt')
         self.input_ids = t['input_ids'].to(device)
         self.attention_masks = t['attention_mask'].to(device)
@@ -50,20 +59,21 @@ class TwitterDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self,idx):
-        mask = torch.empty_like(self.input_ids[idx]).bernoulli_(0.1).bool()
+        mask = torch.empty_like(self.input_ids[idx]).bernoulli_(self.token_dropout).bool()
         t = self.input_ids[idx].masked_fill(mask, self.mask_token_id)
         return {
             'input_ids': t,
             'attention_mask': self.attention_masks[idx],
-            'labels': self.labels[idx]
+            'labels': self.labels[idx],
+            'weight': self.weights[idx],
         }
 
-d = TwitterDataset('data/train.csv', tokenizer)
+d = TwitterDataset('data/train.csv', tokenizer, token_dropout=0.1)
 max_len = len(d[0]['input_ids'])
 
-batch_size = 40
+batch_size = 16
 t,v = torch.utils.data.random_split(d, [0.9, 0.1])
-train = DataLoader(t, batch_size=batch_size, shuffle=True)
+train = DataLoader(t, batch_size=batch_size, sampler=WeightedRandomSampler(t[:]['weight'], len(t), replacement=True))
 val = DataLoader(v, batch_size=batch_size)
 
 #%%
@@ -214,7 +224,7 @@ net = TransformerEncoder(
     num_heads=2,
     dim_feedforward=32,
     dim_out=1,
-    dropout=0.1,
+    dropout=0.3,
     dim_head=32,
 )
 seq = torch.randint(0, len(tokenizer.get_vocab()), (1, max_len)).long().to(device)
@@ -239,10 +249,10 @@ lossfn = nn.BCELoss()
 #scheduler = SchedulerWarmupExpo(opt, warmup_steps=len(train)*warmup_epochs, verbose=True)
 
 sched1 = torch.optim.lr_scheduler.LinearLR(
-    opt, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs, verbose=True
+    opt, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs#, verbose=True
 )
 sched2 = torch.optim.lr_scheduler.ExponentialLR(
-    opt, gamma=0.99, verbose=True
+    opt, gamma=0.9, verbose=True
 )
 scheduler = torch.optim.lr_scheduler.SequentialLR(
     opt, schedulers=[sched1, sched2], milestones=[warmup_epochs], verbose=True,
@@ -261,13 +271,18 @@ torch.cuda.empty_cache()
 for epoch in range(epochs):
     net.train()
     running_loss = 0.0
+    train_total_correct = 0
+    train_total_loss = 0.0
     for i, data in enumerate(train, 0):
         opt.zero_grad()
+        labels = data['labels']
         o = net(
             data['input_ids'],
         )
 
         loss = lossfn(o, data['labels'].unsqueeze(dim=1).float())
+        train_total_loss += loss.item()
+
         loss.backward()
         opt.step()
 
@@ -276,6 +291,8 @@ for epoch in range(epochs):
             print("%d train: %.8f" % (running_loss/float(report_steps)))
             running_loss = 0.0
 
+        p = torch.where(o>0.5, 1.0, 0.0)
+        train_total_correct += (labels.unsqueeze(-1)==p).sum()
 
     net.eval()
     total_loss = 0.0
@@ -293,9 +310,12 @@ for epoch in range(epochs):
             p = torch.where(o>0.5, 1.0, 0.0)
             total_correct += (labels.unsqueeze(-1)==p).sum()
 
+    tl = train_total_loss/float(len(train))
+    tacc = float(train_total_correct)/float(len(train)*batch_size)
+
     vl = total_loss/float(len(val))
-    acc = float(total_correct)/float(len(val)*batch_size)
-    print("[%d] val: %.8f, acc=%.8f" % (epoch, vl, acc))
+    vacc = float(total_correct)/float(len(val)*batch_size)
+    print("[%d] train: %.8f, tacc: %.8f, val: %.8f, vacc=%.8f" % (epoch, tl, tacc, vl, vacc))
 
     if vl<min_val_loss:
         min_val_loss = vl
@@ -303,7 +323,7 @@ for epoch in range(epochs):
     else:
         early_stop_counter += 1
 
-    if early_stop_counter>=100:
+    if early_stop_counter>=1000:
         break
  
     scheduler.step()
