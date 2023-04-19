@@ -97,4 +97,6 @@ for epoch in range(3):
     print("val: %.8f, acc=%.8f" % (vl, acc))
 # %%
 
-# About 83-84% accuracy.
+# after 2 epochs - train: 0.40869739, val: 0.41963388, acc=0.83705650
+# then overfits. 84% is good for this dataset.
+torch.save(net, 'models/01_0')

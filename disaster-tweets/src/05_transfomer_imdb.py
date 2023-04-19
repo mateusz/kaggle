@@ -25,34 +25,26 @@ tokenizer.add_special_tokens({'mask_token': '[MASK]'})
 
 #%%
 
-def cleanup(t):
-    t = re.sub(r'[\s\r\n]', ' ', t)
-    t = re.sub(r' +', ' ', t)
-    t = re.sub(r'http[^ ]*', '', t)
-    t = re.sub(r'@[^ ]*', '', t)
-    t = re.sub(r'[^A-Za-z0-9- ]', '', t)
-    t = re.sub(r'^ *', '', t)
-    t = re.sub(r' *$', '', t)
-    t = t.lower()
-    return t
-
-class TwitterDataset(Dataset):
-    def __init__(self, path, tokenizer, token_dropout=0.1):
+class IMDBDataset(Dataset):
+    def __init__(self, path, tokenizer, device, token_dropout=0.1):
         self.token_dropout = token_dropout
-        d = pd.read_csv(path)#.iloc[:2048]
+        self.device = device
 
-        c1w = 1.0/len(d[d['target']==0])
-        c2w = 1.0/len(d[d['target']!=0])
-        d.loc[d['target']==0, 'weight'] = c1w
-        d.loc[d['target']!=0, 'weight'] = c2w
+        d = pd.read_csv(path)#.iloc[:5000]
+        d.loc[d['sentiment']=='negative', 'label'] = 0.0
+        d.loc[d['sentiment']=='positive', 'label'] = 1.0
+
+        c1w = 1.0/len(d[d['sentiment']=='negative'])
+        c2w = 1.0/len(d[d['sentiment']!='positive'])
+        d.loc[d['label']==0, 'weight'] = c1w
+        d.loc[d['label']!=0, 'weight'] = c2w
         self.weights = d['weight']
 
-        t = d['text']
-        #t = t.apply(cleanup)
-        t = tokenizer(t.to_list(), padding='longest').convert_to_tensors('pt')
+        t = d['review']
+        t = tokenizer(t.to_list(), padding=True, truncation=True).convert_to_tensors('pt')
         self.input_ids = t['input_ids'].to(device)
         self.attention_masks = t['attention_mask'].to(device)
-        self.labels = torch.Tensor(d['target'].values).to(torch.uint8).to(device)
+        self.labels = torch.Tensor(d['label'].values).to(torch.uint8).to(device)
         self.mask_token_id = tokenizer(tokenizer.mask_token)['input_ids'][0]
 
     def __len__(self):
@@ -68,19 +60,50 @@ class TwitterDataset(Dataset):
             'weight': self.weights[idx],
         }
 
-d = TwitterDataset('data/train.csv', tokenizer, token_dropout=0.05)
-max_len = len(d[0]['input_ids'])
+d = IMDBDataset('data/imdb.csv', tokenizer, device, token_dropout=0.1)
 
-batch_size = 16
-t,v = torch.utils.data.random_split(d, [0.9, 0.1])
-train = DataLoader(t, batch_size=batch_size, sampler=WeightedRandomSampler(t[:]['weight'], len(t), replacement=True))
-val = DataLoader(v, batch_size=batch_size)
+max_len = len(d[0]['input_ids'])
+print(max_len)
+
+tr,va,te = torch.utils.data.random_split(d, [0.6, 0.2, 0.2])
+print(len(tr), len(va), len(te))
+
+#%%
+
+rs = WeightedRandomSampler(
+    tr[:]['weight'].to_list(),
+    len(tr),
+    replacement=True
+)
+
+batch_size = 32
+train = DataLoader(
+    tr,
+    batch_size=batch_size,
+    sampler=rs,
+    #num_workers=2, pin_memory=True, persistent_workers=True, prefetch_factor=4
+)
+val = DataLoader(va, batch_size=batch_size,
+    #num_workers=2, pin_memory=True, persistent_workers=True, prefetch_factor=4
+)
+test = DataLoader(te, batch_size=batch_size,
+    #num_workers=2, pin_memory=True, persistent_workers=True, prefetch_factor=4
+)
+
+# Check class ratio
+sum = 0
+tot = 0
+for i,d in enumerate(test, 0):
+    sum += d['labels'].sum()
+    tot += len(d['labels'])
+
+print(sum/tot)
+
 
 #%%
 
 # Following 
 # https://medium.com/the-dl/transformers-from-scratch-in-pytorch-8777e346ca51
-
 
 def scaled_dp_attention(query: Tensor, key: Tensor, value: Tensor) -> Tensor:
     attention = query.bmm(key.transpose(1,2))
@@ -215,6 +238,11 @@ class TransformerEncoder(nn.Module):
         x = self.head(x)
         return x
 
+# Kinda following https://keras.io/examples/nlp/text_classification_with_transformer/
+# differences: using 1024 tokens, and gpt2 tokenizer (vocab=50k),
+# using token dropout (just because it's already there from 04), 
+# the implementation is slightly different, different loss,
+# training for more epochs
 net = TransformerEncoder(
     tokenizer=tokenizer,
     max_len=max_len,
@@ -230,19 +258,19 @@ net = TransformerEncoder(
 seq = torch.randint(0, len(tokenizer.get_vocab()), (1, max_len)).long().to(device)
 net(seq)
 
-print(sum([p.numel() for p in net.parameters()]))
+print(torch.Tensor([p.numel() for p in net.parameters()]).sum())
 #net
 
 #%%
 
-report_steps = 1000
+report_steps = 50
 epochs = 1000
-warmup_epochs = 20
+warmup_steps = 500
 #net = torch.load('models/99_0').to(device)
 
 #def calc_lr(step, dim_embed, warmup_steps):
 #opt = torch.optim.Adam(net.parameters(), betas = (0.9, 0.98), eps = 1.0e-9)
-opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+opt = torch.optim.Adam(net.parameters(), lr=0.001)#1e-4)
 lossfn = nn.BCELoss()
 #scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[2,4], gamma=0.1)
 #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=10, cooldown=10)
@@ -250,13 +278,13 @@ lossfn = nn.BCELoss()
 
 """
 sched1 = torch.optim.lr_scheduler.LinearLR(
-    opt, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs#, verbose=True
+    opt, start_factor=0.01, end_factor=1.0, total_iters=warmup_steps#, verbose=True
 )
 sched2 = torch.optim.lr_scheduler.ExponentialLR(
-    opt, gamma=0.9, verbose=True
+    opt, gamma=0.999#, verbose=True
 )
 scheduler = torch.optim.lr_scheduler.SequentialLR(
-    opt, schedulers=[sched1, sched2], milestones=[warmup_epochs], verbose=True,
+    opt, schedulers=[sched1, sched2], milestones=[warmup_steps], verbose=True,
 )
 """
 
@@ -277,12 +305,12 @@ for epoch in range(epochs):
     train_total_loss = 0.0
     for i, data in enumerate(train, 0):
         opt.zero_grad()
-        labels = data['labels']
+        labels = data['labels'].to(device)
         o = net(
-            data['input_ids'],
+            data['input_ids'].to(device),
         )
 
-        loss = lossfn(o, data['labels'].unsqueeze(dim=1).float())
+        loss = lossfn(o, labels.unsqueeze(dim=1).float())
         train_total_loss += loss.item()
 
         loss.backward()
@@ -290,23 +318,25 @@ for epoch in range(epochs):
 
         running_loss += loss.item()
         if i % report_steps == report_steps-1:
-            print("%d train: %.8f" % (running_loss/float(report_steps)))
+            print("train: %.8f" % (running_loss/float(report_steps)))
             running_loss = 0.0
 
         p = torch.where(o>0.5, 1.0, 0.0)
         train_total_correct += (labels.unsqueeze(-1)==p).sum()
+
+        #scheduler.step()
 
     net.eval()
     total_loss = 0.0
     with torch.no_grad():
         total_correct = 0
         for i, data in enumerate(val, 0):
-            labels = data['labels']
+            labels = data['labels'].to(device)
             o = net(
-                data['input_ids'],
+                data['input_ids'].to(device),
             )
 
-            loss = lossfn(o, data['labels'].unsqueeze(dim=1).float())
+            loss = lossfn(o, labels.unsqueeze(dim=1).float())
             total_loss += loss.item()
 
             p = torch.where(o>0.5, 1.0, 0.0)
@@ -330,41 +360,36 @@ for epoch in range(epochs):
  
     #scheduler.step()
     #scheduler.step(vl)
-#%%
 
-#[5] train: 0.39285325, tacc: 0.82969114, val: 0.56433411, vacc=0.75911458
-# Further epochs start overfitting (after around 10 epochs tacc is 92%).
-# 76% is pretty good.
-torch.save(net, 'models/04_0')
 
 #%%
 
-t = torch.Tensor([
-    [1,1,1],
-    [2,2,2]
-])
-torch.mean(t, dim=0)
-n = nn.AvgPool2d()
-n(t)
+# [4] train: 0.22806116, tacc: 0.90898188, val: 0.32905554, vacc=0.86791134
+torch.save(net, 'models/05_0')
 
 #%%
-"""
-p = position_encoding(100,512)
-p = p.squeeze(dim=0)
-cax = plt.matshow(p)
-plt.gcf().colorbar(cax)
 
-max_seq_len = 100
-dim_model = 1000
-pos = torch.arange(max_seq_len, dtype=torch.float).reshape(1, -1, 1)
-dim = torch.arange(dim_model, dtype=torch.float).reshape(1, 1, -1)
-print(pos)
-print(1 / (1e4 ** (dim/dim_model)))
-phase = pos / (1e4 ** (dim / dim_model))
-plt.plot(torch.sin(phase[0][99]))
-plt.plot(phase[0][99])
-plt.show()
-#torch.where(dim.long() % 2 == 0, torch.sin(phase), torch.cos(phase))
+net = torch.load('models/05_0').to(device)
+net.eval()
+total_loss = 0.0
+with torch.no_grad():
+    total_correct = 0
+    for i, data in enumerate(test, 0):
+        labels = data['labels'].to(device)
+        o = net(
+            data['input_ids'].to(device),
+        )
 
-#torch.where(dim.long() % 2 == 0, 0, 1)
-"""
+        loss = lossfn(o, labels.unsqueeze(dim=1).float())
+        total_loss += loss.item()
+
+        p = torch.where(o>0.5, 1.0, 0.0)
+        total_correct += (labels.unsqueeze(-1)==p).sum()
+
+testl = total_loss/float(len(test))
+testacc = float(total_correct)/float(len(test)*batch_size)
+print("test: %.8f, test acc=%.8f" % (testl,testacc))
+
+# test: 0.33316907, test acc=0.86880990
+# This accuracy is on par with TF source which reached 0.8745
+# This leads me to conclude this model is also good for 04, and 70%+ is as far as that one with go, with this dataset
