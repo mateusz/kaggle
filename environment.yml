@@ -25,3 +25,5 @@ dependencies:
       - torchdata
       - torcharrow
       - transformers
+      - accelerate
+      - bitsandbytes
