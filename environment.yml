@@ -24,6 +24,8 @@ dependencies:
       - torchaudio
       - torchdata
       - torcharrow
-      - transformers
       - accelerate
       - bitsandbytes
+      - sentencepiece
+      - transformers
+      - adapter-transformers

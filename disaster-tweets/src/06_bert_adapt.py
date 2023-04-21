@@ -8,6 +8,7 @@ import torch.nn as nn
 from transformers import DistilBertTokenizer, DistilBertModel, DistilBertForSequenceClassification 
 from transformers import BertTokenizer, BertModel, BertForSequenceClassification 
 import torch.nn.functional as F
+import transformers.adapters as adapters
 
 torch.manual_seed(1)
 
@@ -44,15 +45,23 @@ train = DataLoader(t, batch_size=128, shuffle=True)
 val = DataLoader(v, batch_size=128)
 
 #%%
-
 net = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=2).to(device)
 
 for p in net.distilbert.parameters():
     p.requires_grad = False
 
-for p in net.distilbert.transformer.layer[-1].parameters():
-    p.requires_grad = True
+config = adapters.LoRAConfig(r=8, alpha=16)
+#config = adapters.HoulsbyConfig(mh_adapter=True, output_adapter=True, reduction_factor=16, non_linearity="relu")
+#config = adapters.IA3Config()
+net.add_adapter("adapter", config=config)
+net.train_adapter("adapter")
+net.set_active_adapters("adapter")
 
+net = net.to(device)
+trainable = sum(p.numel() for p in net.parameters() if p.requires_grad)
+total = sum(p.numel() for p in net.parameters())
+
+print("Percent trainable: %.2f%%" % (100.0*(trainable/total)))
 #%%
 
 report_steps = 5
@@ -61,7 +70,7 @@ opt = torch.optim.Adam(
     lr = 1e-4
 )
 lossfn = nn.CrossEntropyLoss()
-scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[2,4], gamma=0.1)
+#scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[2,3], gamma=0.1)
 #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=0, cooldown=0)
 
 min_val_loss = 9999999999.0
@@ -117,25 +126,14 @@ for epoch in range(999):
         break
  
     #scheduler.step(vl)
-    scheduler.step()
-# %%
+    #scheduler.step()
 
-# distilbert-base-uncased:
-# Baseline: val: 0.39954047, acc=0.83705650 (after 1 epoch, at 1e-4, lr schedule not needed)
-# Just classifier layer: val: 0.44075171, acc=0.80157687
-# Final layer+classifier: val: 0.42129846, acc=0.81865966
-# First layer + classfier: val: 0.43145483, acc=0.82785808 (overfits training)
+#%%
 
-# bert-base-uncased: 
-# just classifier: same bad
-# final 2 layers + classifier: same bad
-
-# bert-large-cased:
-# 20:24 + classifier: val: 0.43918899, acc=0.81208936
-# 0 + classifier: OOM
-# 12 + classifier: val: 0.44430767, acc=0.80814717, still converging
-# 12: + classfier: OOM
-# 12,16,20 + classifier: val: 0.44983255, acc=0.80420499
-
-# distilbert-base-cased
-# Final layer+classifier: val: 0.41605143, acc=0.82260184 (3.75GB)
+# full finetune: 84% (5.85GB)
+# finetune_bert_top, Final layer+classifier: 82.2% (3.75GB)
+# Just head: 80.5% (2GB)
+# Housby: 81% (4.5GB)
+# LoRA: 81% (4.3GB)
+# IA3: 79% (5.30GB)
+# 
