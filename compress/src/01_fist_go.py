@@ -154,6 +154,14 @@ net = nn.Sequential(
 )
 
 # ReLU is sharper than GDN.
+# Bigger kernels seem to help.
+# At around SSIM=0.000026 minor stars start popping up, as well as Webb artifacts, grain still invisible
+# Arch above has a latent space of 256x1x1 on 64 128x128 tiles (0.0625 bpp)
+# At 0.000020 even the smallest stars become visible in the reconstruction. This seems like a good level for a usable compressor.
+# This level was reached around epoch 6000 (and training stopped improving).
+# [6419] l=0.0000, abs=0.0860, perc=0.00002301 (min=0.00001973)
+# Unfortunatey frames are still visible.
+
 
 net = net.to(device)
 print(net(iset[0].unsqueeze(0)).shape)
@@ -250,7 +258,7 @@ for epoch in range(999999):
 net = torch.load('models/01')
 net.eval()
 
-#show_img(iset, iset[:], size=15)
+show_img(iset, iset[:], size=15)
 show_img(iset, net(iset[:]), size=15)
 
 # about [329] l=0.0169, abs=0.0168, perc=0.00006306 (min=0.0167)
