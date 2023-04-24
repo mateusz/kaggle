@@ -51,7 +51,7 @@ class ImgSet(Dataset):
     def __getitem__(self, idx):
         return self.img[idx]
 
-tile=256
+tile=128
 wtiles=8
 htiles=8
 batch_size=8
@@ -61,57 +61,57 @@ print(iset.img.shape, iset.wtiles, iset.htiles)
 train = DataLoader(iset, batch_size=batch_size, shuffle=True)
 
 #%%
-ch = 8
-latent = 512
+ch = 16
+#latent = 512
 net = nn.Sequential(
         nn.Conv2d(3, ch, 5),
         nn.MaxPool2d(2),
-        GDN(ch, device),
+        #GDN(ch, device),
+        nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch),
         #nn.BatchNorm2d(ch),
         
-        nn.Conv2d(ch, ch*2, 3),
+        nn.Conv2d(ch, ch*2, 5),
         nn.MaxPool2d(2),
-        GDN(ch*2, device),
+        #GDN(ch*2, device),
+        nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch*2),
         #nn.BatchNorm2d(ch*2),
-        # 32,62,62
 
-        nn.Conv2d(ch*2, ch*4, 3),
+        nn.Conv2d(ch*2, ch*4, 5),
         nn.MaxPool2d(2),
         nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch*4),
         #nn.BatchNorm2d(ch*4),
-        # 64,30,30
 
         nn.Conv2d(ch*4, ch*8, 3),
         nn.MaxPool2d(2),
         nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch*8),
         #nn.BatchNorm2d(ch*8),
-        #128,14,14
 
         nn.Conv2d(ch*8, ch*16, 3),
         nn.MaxPool2d(2),
         nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch*16),
         #nn.BatchNorm2d(ch*16),
-        # 256,6,6
+        # 128,1,1
 
-        nn.Conv2d(ch*16, ch*32, 3),
-        nn.MaxPool2d(2),
-        nn.ReLU(inplace=True),
+        #nn.Conv2d(ch*16, ch*64, 1),
+        #nn.MaxPool2d(2),
+        #nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch*32),
         #nn.BatchNorm2d(ch*32),
         # 512,2,2
 
-        nn.Conv2d(ch*32, ch*64, 1),
-        nn.MaxPool2d(2),
-        nn.ReLU(inplace=True),
+        #nn.Conv2d(ch*32, ch*64, 1),
+        #nn.MaxPool2d(2),
+        #nn.ReLU(inplace=True),
         # 1024,1,1
 
-        nn.Conv2d(ch*64, ch*64, 1),
+        nn.Conv2d(ch*16, ch*16, 1),
         nn.ReLU(inplace=True),
+        
         #nn.Flatten(),
         #nn.Linear(ch*64, latent),
         #nn.ReLU(),
@@ -119,36 +119,41 @@ net = nn.Sequential(
         #nn.ReLU(),
         #nn.Unflatten(1, (ch*64,1,1)),
 
-        nn.ConvTranspose2d(ch*64, ch*32, 2, stride=1),
-        nn.ReLU(inplace=True),
+        #nn.ConvTranspose2d(ch*64, ch*32, 2, stride=1),
+        #nn.ReLU(inplace=True),
 
-        nn.ConvTranspose2d(ch*32, ch*16, 4, stride=2),
-        nn.ReLU(inplace=True),
+        #nn.ConvTranspose2d(ch*64, ch*16, 2, stride=1),
+        #nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch*16),
         #nn.BatchNorm2d(ch*16),
 
-        nn.ConvTranspose2d(ch*16, ch*8, 4, stride=2),
+        nn.ConvTranspose2d(ch*16, ch*8, 5, stride=2),
         nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch*8),
         #nn.BatchNorm2d(ch*8),
 
-        nn.ConvTranspose2d(ch*8, ch*4, 4, stride=2),
+
+        nn.ConvTranspose2d(ch*8, ch*4, 5, stride=2),
         nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch*4),
         #nn.BatchNorm2d(ch*4),
 
-        nn.ConvTranspose2d(ch*4, ch*2, 4, stride=2),
-        GDN(ch*2, device),
+        nn.ConvTranspose2d(ch*4, ch*2, 5, stride=2),
+        #GDN(ch*2, device),
+        nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch*2),
         #nn.BatchNorm2d(ch*2),
 
-        nn.ConvTranspose2d(ch*2, ch, 4, stride=2),
-        GDN(ch, device),
+        nn.ConvTranspose2d(ch*2, ch, 6, stride=2),
+        #GDN(ch, device),
+        nn.ReLU(inplace=True),
         #torch.nn.GroupNorm(1,ch),
         #nn.BatchNorm2d(ch),
 
         nn.ConvTranspose2d(ch, 3, 6, stride=2),
 )
+
+# ReLU is sharper than GDN.
 
 net = net.to(device)
 print(net(iset[0].unsqueeze(0)).shape)
@@ -169,6 +174,19 @@ def show_img(iset, data, size=5):
     ax.axis('off')
     ax.imshow(merged)
     plt.show()
+
+def show_tile(tile, tile2, size=5):
+    # Prep for pyplot
+    tile = tile.detach().cpu().permute(1,2,0)
+    tile2 = tile2.detach().cpu().permute(1,2,0)
+
+    fig,ax = plt.subplots(1,2,figsize=(size*2,size))
+    ax[0].axis('off')
+    ax[1].axis('off')
+    ax[0].imshow(tile)
+    ax[1].imshow(tile2)
+    plt.show()
+
 
 #%%
 
@@ -210,7 +228,7 @@ for epoch in range(999999):
         print("[%d] l=%.4f, abs=%.4f, perc=%.8f (min=%.8f)" % (epoch, running_loss, running_abs, running_perc, min_loss))
     if epoch%image_steps==(image_steps-1):
         net.eval()
-        show_img(iset, net(iset[:]), size=5)
+        show_tile(iset[1], net(iset[1].unsqueeze(0)).squeeze(0), size=5)
         net.train()
 
     if running_loss<min_loss:
