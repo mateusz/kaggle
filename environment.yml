@@ -29,3 +29,6 @@ dependencies:
       - sentencepiece
       - transformers
       - adapter-transformers
+      - compressai
+      - scikit-image
+      - sewar
