@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from transformers import DistilBertTokenizer, DistilBertModel, DistilBertForSequenceClassification 
 import torch.nn.functional as F
 from gdn.pytorch_gdn import GDN
 import cv2
@@ -52,13 +51,15 @@ class ImgSet(Dataset):
         return self.img[idx]
 
 tile=128
-wtiles=8
-htiles=8
-batch_size=8
+wtiles=-1
+htiles=-1
+batch_size=128
+# 256 tiles (with batch 8) converged
 iset = ImgSet('data/STScI-01GA76Q01D09HFEV174SVMQDMV.png', tile=tile, wtiles=wtiles, htiles=htiles)
 print(iset.img.shape, iset.wtiles, iset.htiles)
 
 train = DataLoader(iset, batch_size=batch_size, shuffle=True)
+print(len(train))
 
 #%%
 ch = 16
@@ -109,8 +110,13 @@ net = nn.Sequential(
         #nn.ReLU(inplace=True),
         # 1024,1,1
 
-        nn.Conv2d(ch*16, ch*16, 1),
-        nn.ReLU(inplace=True),
+        #nn.Conv2d(ch*32, ch*32, 1),
+        #nn.ReLU(inplace=True),
+
+        nn.Flatten(),
+        nn.Linear(ch*16, ch*16),
+        nn.ReLU(),
+        nn.Unflatten(1, (256,1,1)),
         
         #nn.Flatten(),
         #nn.Linear(ch*64, latent),
@@ -162,6 +168,7 @@ net = nn.Sequential(
 # [6419] l=0.0000, abs=0.0860, perc=0.00002301 (min=0.00001973)
 # Unfortunatey frames are still visible.
 
+torch.save(net[16:],'models/test')
 
 net = net.to(device)
 print(net(iset[0].unsqueeze(0)).shape)
@@ -185,8 +192,8 @@ def show_img(iset, data, size=5):
 
 def show_tile(tile, tile2, size=5):
     # Prep for pyplot
-    tile = tile.detach().cpu().permute(1,2,0)
-    tile2 = tile2.detach().cpu().permute(1,2,0)
+    tile = tile.permute(1,2,0).clamp(0.0,1.0).detach().cpu()
+    tile2 = tile2.permute(1,2,0).clamp(0.0,1.0).detach().cpu()
 
     fig,ax = plt.subplots(1,2,figsize=(size*2,size))
     ax[0].axis('off')
@@ -198,19 +205,19 @@ def show_tile(tile, tile2, size=5):
 
 #%%
 
-opt = torch.optim.Adam(net.parameters(), lr=0.0001)
+opt = torch.optim.Adam(net.parameters(), lr=0.001)
 
 perc = MS_SSIM(data_range=1, size_average=True, channel=3)
 abs = nn.L1Loss()
 
 perc_w = 1.0
-abs_w = 0.0
+abs_w = 1.0
 
 net = net.to(device)
 net.train()
 early_stop = 0
-report_steps = 10
-image_steps = 100
+report_steps = 1
+image_steps = 20
 for epoch in range(999999):
     running_loss = 0.0
     running_perc = 0.0
@@ -261,4 +268,8 @@ net.eval()
 show_img(iset, iset[:], size=15)
 show_img(iset, net(iset[:]), size=15)
 
-# about [329] l=0.0169, abs=0.0168, perc=0.00006306 (min=0.0167)
+
+# Next:
+# - deal with frames by tile overlap
+# - try smaller tile (64x64)
+# - increase amount of tiles

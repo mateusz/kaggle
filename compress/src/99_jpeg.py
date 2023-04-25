@@ -24,9 +24,12 @@ PIL.Image.MAX_IMAGE_PIXELS = None
 #%%
 
 orig = PIL.Image.open('data/STScI-01GA76Q01D09HFEV174SVMQDMV.png')
+orig.crop((512,0,1024,512)).save('out/orig-tile.png')
 cropped = orig.crop((0,0,4096,4096))
 cropped.save('out/test-orig.png')
 cropped.save('out/test-jpeg95.jpg', quality=95)
+cropped.save('out/test-jpeg70.jpg', quality=70)
+cropped.save('out/test-jpeg50.jpg', quality=50)
 cropped.save('out/test-jpeg20.jpg', quality=20)
 orig = None
 cropped = None
@@ -36,12 +39,15 @@ class Format(Enum):
     PIL = 1
 
 class ImData():
-    def __init__(self, d, format):
+    def __init__(self, d, format, filesize=-1):
         if format==Format.PIL:
             data = PIL.Image.open(d)
             t = transforms.ToTensor()
             self.tensor = t(data)
-            self.size = os.path.getsize(d)
+            if filesize>0:
+                self.size = filesize
+            else:
+                self.size = os.path.getsize(d)
             self.w, self.h = data.size
 
     def numpy(self):
@@ -58,12 +64,22 @@ def get_metrics(orig:ImData, comp:ImData):
     return m_psnr, m_msssim, rate, bpp
 
 orig = ImData('out/test-orig.png', Format.PIL)
-jpeg95 = ImData('out/test-jpeg95.jpg', Format.PIL)
-jpeg20 = ImData('out/test-jpeg20.jpg', Format.PIL)
-print("orig: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, orig))
-print("jpeg95: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg95))
-print("jpeg20: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg20))
+#jpeg95 = ImData('out/test-jpeg95.jpg', Format.PIL)
+jpeg70 = ImData('out/test-jpeg70.jpg', Format.PIL)
+#jpeg50 = ImData('out/test-jpeg50.jpg', Format.PIL)
+#jpeg20 = ImData('out/test-jpeg20.jpg', Format.PIL)
+#zero2a = ImData('out/test-02a.png', Format.PIL, filesize=112832)
+
+#print("orig: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, orig))
+#print("jpeg95: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg95))
+print("jpeg70: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg70))
+#print("jpeg50: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg50))
+#print("jpeg20: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg20))
+#print("02a: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero2a))
 
 #orig: psnr=inf, ms-ssim=1.000000, rate=1.0000, bpp=9.53
 #jpeg95: psnr=40.87, ms-ssim=0.990100, rate=0.1568, bpp=1.49
-#jpeg95: psnr=34.05, ms-ssim=0.922156, rate=0.0189, bpp=0.18
+#02a: psnr=38.21, ms-ssim=0.979415, rate=0.0056, bpp=0.05
+#jpeg70: psnr=37.24, ms-ssim=0.973139, rate=0.0416, bpp=0.40
+#jpeg50: psnr=36.36, ms-ssim=0.963297, rate=0.0299, bpp=0.29
+#jpeg20: psnr=34.05, ms-ssim=0.922156, rate=0.0189, bpp=0.18
