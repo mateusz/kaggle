@@ -65,17 +65,21 @@ def get_metrics(orig:ImData, comp:ImData):
 
 orig = ImData('out/test-orig.png', Format.PIL)
 #jpeg95 = ImData('out/test-jpeg95.jpg', Format.PIL)
-jpeg70 = ImData('out/test-jpeg70.jpg', Format.PIL)
+#jpeg70 = ImData('out/test-jpeg70.jpg', Format.PIL)
 #jpeg50 = ImData('out/test-jpeg50.jpg', Format.PIL)
 #jpeg20 = ImData('out/test-jpeg20.jpg', Format.PIL)
 #zero2a = ImData('out/test-02a.png', Format.PIL, filesize=112832)
+zero3a = ImData('out/test-03a.png', Format.PIL, filesize=91392)
+zero3b = ImData('out/test-03b.png', Format.PIL, filesize=69376)
 
 #print("orig: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, orig))
 #print("jpeg95: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg95))
-print("jpeg70: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg70))
+#print("jpeg70: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg70))
 #print("jpeg50: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg50))
 #print("jpeg20: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg20))
 #print("02a: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero2a))
+print("03a: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero3a))
+print("03b: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero3b))
 
 #orig: psnr=inf, ms-ssim=1.000000, rate=1.0000, bpp=9.53
 #jpeg95: psnr=40.87, ms-ssim=0.990100, rate=0.1568, bpp=1.49
@@ -83,3 +87,5 @@ print("jpeg70: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig,
 #jpeg70: psnr=37.24, ms-ssim=0.973139, rate=0.0416, bpp=0.40
 #jpeg50: psnr=36.36, ms-ssim=0.963297, rate=0.0299, bpp=0.29
 #jpeg20: psnr=34.05, ms-ssim=0.922156, rate=0.0189, bpp=0.18
+#03a: psnr=37.69, ms-ssim=0.979635, rate=0.0046, bpp=0.04
+#03b: psnr=37.60, ms-ssim=0.982884, rate=0.0035, bpp=0.03
