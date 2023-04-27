@@ -15,7 +15,7 @@ from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
 from compressai.entropy_models import EntropyBottleneck
 from compressai.layers import GDN
 import os
-import src.lib as lib
+import src.lib as slib
 
 torch.manual_seed(1)
 
@@ -181,6 +181,7 @@ try:
 
         for i,t in enumerate(train,0):
             opt.zero_grad()
+            auxopt.zero_grad()
 
             x_hat, y_likelihoods = net(t)
 
@@ -232,7 +233,7 @@ try:
         else:
             early_stop += 1
 
-        if early_stop>100:
+        if early_stop>20:
             break
 
         running_loss = 0.0
@@ -243,8 +244,52 @@ except KeyboardInterrupt:
     print('interrupted!')
 
 # N=32, lr=0.001, tile=128, batch=16, ssim, bpp at 0.05
-# [38] l=0.05720340, bpp=0.2206, perc=0.04617104, aux=491629.2373 (min=0.05669338)
+#[365] l=0.04349067, bpp=0.2017, perc=0.03340337, aux=15.5376 (min=0.04356642)
+# but good after ~200 epochs - aux went down, then up to 4200, then down again
 
+#%%
+
+# Joint training gives better result
+"""
+min_loss = 9999999
+net = torch.load('models/%s' % name)
+net = net.to(device)
+net.train()
+early_stop = 0
+auxopt = torch.optim.Adam(net.entropy_bottleneck.parameters(), lr=0.01)
+try:
+    for epoch in range(999999):
+        running_loss = 0.0
+
+        for i,t in enumerate(train,0):
+            auxopt.zero_grad()
+
+            x_hat, y_likelihoods = net(t)
+            auxloss = net.entropy_bottleneck.loss()
+            auxloss.backward()
+            auxopt.step()
+
+            running_loss += auxloss.item()
+
+        running_loss /= len(train)
+
+        if epoch%report_steps==(report_steps-1):
+            print("[%d] aux=%.4f (min=%.4f)" % (epoch, running_loss, min_loss))
+
+        if running_loss<min_loss:
+            early_stop = 0
+            min_loss = running_loss
+            torch.save(net, 'models/%s' % name)
+        else:
+            early_stop += 1
+
+        if early_stop>5:
+            break
+
+        running_loss = 0.0
+except KeyboardInterrupt:
+    print('interrupted!')
+"""
 
 #%%
 net = torch.load('models/%s' % name)
@@ -276,10 +321,7 @@ for i,t in enumerate(test,0):
 collect.to_parquet('out/test-%s.parquet' % name)
 #%%
 
-collect_out = lib.decompress_file(net, 'out/test-%s.parquet' % name, shape, batch_size)
-
-#%%
-
+collect_out = slib.decompress_file(net, 'out/test-%s.parquet' % name, shape, batch_size)
 h = iset.htiles*tile
 w = iset.wtiles*tile
 merged = collect_out.view(iset.htiles,iset.wtiles,3,tile,tile).permute(2,0,3,1,4)

@@ -4,10 +4,12 @@ import torch
 # TODO store wtiles, htiles, tile and shape
 
 def decompress_file(model, fname, shape, batch_size):
-    if type(net)==str:
+    if type(model)==str:
         net = torch.load(model)
         net.eval()
         net.entropy_bottleneck.update()
+    else:
+        net = model
 
     collect_out = torch.Tensor()
     f = pd.read_parquet(fname)

@@ -85,8 +85,8 @@ print("03c: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, ze
 
 #orig: psnr=inf, ms-ssim=1.000000, rate=1.0000, bpp=9.53
 #jpeg95: psnr=40.87, ms-ssim=0.990100, rate=0.1568, bpp=1.49
-#02a: psnr=38.21, ms-ssim=0.979415, rate=0.0056, bpp=0.05
+#02a: psnr=38.21, ms-ssim=0.979415, rate=0.0056, bpp=0.05 ???? questionable
+#03c: psnr=37.69, ms-ssim=0.979726, rate=0.0187, bpp=0.18 -> good
 #jpeg70: psnr=37.24, ms-ssim=0.973139, rate=0.0416, bpp=0.40
 #jpeg50: psnr=36.36, ms-ssim=0.963297, rate=0.0299, bpp=0.29
-#03c: psnr=33.91, ms-ssim=0.958998, rate=0.0184, bpp=0.18
 #jpeg20: psnr=34.05, ms-ssim=0.922156, rate=0.0189, bpp=0.18
