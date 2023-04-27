@@ -15,6 +15,7 @@ from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
 from compressai.entropy_models import EntropyBottleneck
 from compressai.layers import GDN
 import os
+import src.lib as lib
 
 torch.manual_seed(1)
 
@@ -97,7 +98,7 @@ class Network(nn.Module):
        x_hat = self.decode(y_hat)
        return x_hat, y_likelihoods
 
-net = Network().to(device)
+net = Network(N=32).to(device)
 print(net(iset[0].unsqueeze(0))[0].shape)
 print(sum([l.numel() for l in net.parameters()]))
 min_loss = 9999999
@@ -129,34 +130,11 @@ def show_tile(tile, tile2, size=5):
     ax[1].imshow(tile2)
     plt.show()
 
-# With N=32
-# lr=0.001 seems better
 
-# MSE
-# [231] l=0.00021802, bpp=0.5467, perc=0.00016335, aux=828.2197 (min=0.00022098)
-# way faster, and smaller compressed size, and model size too! as 03a
-# but needs blending
-
-# MSSSIM
-# [240] l=0.01156292, bpp=1.3307, perc=0.01023221, aux=898.5061 (min=0.01161924)
-
-# SSIM, with lr=0.001
-# [85] l=0.03663011, bpp=0.5477, perc=0.03115360, aux=126640.2448 (min=0.03650596)
-# as 03b
-
-# N=16, 03c
-# crashed after 144 epochs with Invalid `pmf`: at least one element must have a non-zero probability.
-# I think this is not enough channels
-
-# size was incorrect, try again
-
-# N=64, 03c, tile=256
-# bad
-# N=128, tile=128
 
 #%%
 
-opt = torch.optim.Adam((net.encode+net.decode).parameters(), lr=0.0001)
+opt = torch.optim.Adam((net.encode+net.decode).parameters(), lr=0.001)
 auxopt = torch.optim.Adam(net.entropy_bottleneck.parameters(), lr=0.001)
 
 
@@ -180,7 +158,7 @@ perc_w = 1.0
 # for ssim, 0.0001 produces 1.87bpp
 # for msssimg, 0.001 produces 1.33bpp
 # for ssim, 0.01 produces 0.5bpp
-bpp_w = 0.1
+bpp_w = 0.05
 
 # ssim works really well
 # but need to solve tiling issue (overlap?)
@@ -264,18 +242,26 @@ try:
 except KeyboardInterrupt:
     print('interrupted!')
 
+# N=32, lr=0.001, tile=128, batch=16, ssim, bpp at 0.05
+# [38] l=0.05720340, bpp=0.2206, perc=0.04617104, aux=491629.2373 (min=0.05669338)
+
+
 #%%
 net = torch.load('models/%s' % name)
 net.eval()
 o = None
 collect = None
+collect_out = None
 torch.cuda.empty_cache()
 
 test = DataLoader(iset, batch_size=batch_size, shuffle=False)
 #%%
 
+# Storage via writing tiles as byte strings into parquet rows.
+# Benefits additionally from parquet compression.
+shape = None
 net.entropy_bottleneck.update()
-collect = torch.Tensor()
+collect = pd.DataFrame()
 for i,t in enumerate(test,0):
     #o = net(t)[0]
     #collect = torch.concat([collect,o.detach().cpu().clip(0.0,1.0)])
@@ -283,19 +269,19 @@ for i,t in enumerate(test,0):
     # From https://github.com/InterDigitalInc/CompressAI/blob/master/compressai/models/base.py
     e = net.encode(t)
     bs = net.entropy_bottleneck.compress(e)
+    if shape==None:
+        shape = e.size()[2:]
+    for b in bs:
+        collect = collect.append({'chunk': b}, ignore_index=True)
+collect.to_parquet('out/test-%s.parquet' % name)
 #%%
-f = open('out/test-%s.bytes' % name, 'ab')
-for b in bs:
-    f.write(b)
-f.close()
 
-#%%
-f = open('out/test-%s.bytes' % name, 'rb')
+collect_out = lib.decompress_file(net, 'out/test-%s.parquet' % name, shape, batch_size)
 
 #%%
 
 h = iset.htiles*tile
 w = iset.wtiles*tile
-merged = collect.view(iset.htiles,iset.wtiles,3,tile,tile).permute(2,0,3,1,4)
+merged = collect_out.view(iset.htiles,iset.wtiles,3,tile,tile).permute(2,0,3,1,4)
 merged = merged.reshape(3, h, w)
 save_image(merged, 'out/test-%s.png' % name)
