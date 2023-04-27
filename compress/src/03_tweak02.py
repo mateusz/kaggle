@@ -14,11 +14,12 @@ import matplotlib.pyplot as plt
 from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
 from compressai.entropy_models import EntropyBottleneck
 from compressai.layers import GDN
+import os
 
 torch.manual_seed(1)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-name = '03'
+name = '03c'
 
 #%%
 class ImgSet(Dataset):
@@ -67,7 +68,7 @@ print(len(train))
 #%%
 
 class Network(nn.Module):
-    def __init__(self, N=32):
+    def __init__(self, N=128):
         super().__init__()
         self.entropy_bottleneck = EntropyBottleneck(N)
         self.encode = nn.Sequential(
@@ -143,10 +144,19 @@ def show_tile(tile, tile2, size=5):
 # [85] l=0.03663011, bpp=0.5477, perc=0.03115360, aux=126640.2448 (min=0.03650596)
 # as 03b
 
+# N=16, 03c
+# crashed after 144 epochs with Invalid `pmf`: at least one element must have a non-zero probability.
+# I think this is not enough channels
+
+# size was incorrect, try again
+
+# N=64, 03c, tile=256
+# bad
+# N=128, tile=128
 
 #%%
 
-opt = torch.optim.Adam((net.encode+net.decode).parameters(), lr=0.001)
+opt = torch.optim.Adam((net.encode+net.decode).parameters(), lr=0.0001)
 auxopt = torch.optim.Adam(net.entropy_bottleneck.parameters(), lr=0.001)
 
 
@@ -157,10 +167,12 @@ msssim = MS_SSIM(data_range=1, size_average=True, channel=3)
 # Produces better results after half the epochs, with higher bpp (1.7 vs 0.5).
 # Has edge artifacts, but reproduces better detail (e.g. webb artifacts)
 # seems the best
+# Good loss here is around 0.02-0.03
 ssim = SSIM(data_range=1, size_average=True, channel=3)
 # maybe try mse+ssim?
 
 # Usual smoothed version. Does not have webb artifacts.
+# Good loss here is around 0.0002
 mse = torch.nn.MSELoss()
 
 perc_w = 1.0
@@ -168,80 +180,89 @@ perc_w = 1.0
 # for ssim, 0.0001 produces 1.87bpp
 # for msssimg, 0.001 produces 1.33bpp
 # for ssim, 0.01 produces 0.5bpp
-bpp_w = 0.01
+bpp_w = 0.1
 
 # ssim works really well
 # but need to solve tiling issue (overlap?)
 
+if not os.path.exists('out/train%s' % (name)):
+    os.mkdir('out/train%s' % (name))
 net = net.to(device)
 net.train()
 early_stop = 0
 report_steps = 1
 image_steps = 1
 show_steps = 1000000
-for epoch in range(999999):
-    running_loss = 0.0
-    running_perc = 0.0
-    running_bpp = 0.0
-    running_auxloss = 0.0
 
-    for i,t in enumerate(train,0):
-        opt.zero_grad()
+try:
+    for epoch in range(999999):
+        running_loss = 0.0
+        running_perc = 0.0
+        running_bpp = 0.0
+        running_auxloss = 0.0
 
-        x_hat, y_likelihoods = net(t)
+        for i,t in enumerate(train,0):
+            opt.zero_grad()
 
-        perc_loss = 1.0 - ssim(t, x_hat)
-        #perc_loss = 1.0 - msssim(t, x_hat)
-        #perc_loss = mse(t, x_hat)
+            x_hat, y_likelihoods = net(t)
 
-        N, _, H, W = t.size()
-        num_pixels = N * H * W
-        bpp_loss = torch.log(y_likelihoods).sum() / (-math.log(2) * num_pixels)
+            perc_loss = 1.0 - ssim(t, x_hat)
+            #perc_loss = 1.0 - msssim(t, x_hat)
+            #perc_loss = mse(t, x_hat)
 
-        loss = perc_w*perc_loss + bpp_w*bpp_loss
+            N, _, H, W = t.size()
+            num_pixels = N * H * W
+            bpp_loss = torch.log(y_likelihoods).sum() / (-math.log(2) * num_pixels)
 
-        loss.backward()
-        opt.step()
+            loss = perc_w*perc_loss + bpp_w*bpp_loss
 
-        auxloss = net.entropy_bottleneck.loss()
-        auxloss.backward()
-        auxopt.step()
+            loss.backward()
+            opt.step()
 
-        running_loss += loss.item()
-        running_bpp += bpp_loss.item()
-        running_perc += perc_loss.item()
-        running_auxloss += auxloss.item()
+            auxloss = net.entropy_bottleneck.loss()
+            auxloss.backward()
+            auxopt.step()
 
-    running_loss /= len(train)
-    running_bpp /= len(train)
-    running_perc /= len(train)
-    running_auxloss /= len(train)
+            running_loss += loss.item()
+            running_bpp += bpp_loss.item()
+            running_perc += perc_loss.item()
+            running_auxloss += auxloss.item()
 
-    if epoch%report_steps==(report_steps-1):
-        print("[%d] l=%.8f, bpp=%.4f, perc=%.8f, aux=%.4f (min=%.8f)" % (epoch, running_loss, running_bpp, running_perc, running_auxloss, min_loss))
-    if epoch%image_steps==(image_steps-1):
-        net.eval()
-        res = net(iset[1].unsqueeze(0))[0].squeeze(0)
-        if epoch%show_steps==0:
-            show_tile(iset[1], net(iset[1].unsqueeze(0))[0].squeeze(0), size=5)
-        save_image(res, 'out/train%s/%d.png' % (name, epoch))
-        net.train()
+        running_loss /= len(train)
+        running_bpp /= len(train)
+        running_perc /= len(train)
+        running_auxloss /= len(train)
 
-    if running_loss<min_loss:
-        early_stop = 0
-        min_loss = running_loss
-        torch.save(net, 'models/%s' % name)
-    else:
-        early_stop += 1
+        if epoch%report_steps==(report_steps-1):
+            print("[%d] l=%.8f, bpp=%.4f, perc=%.8f, aux=%.4f (min=%.8f)" % (epoch, running_loss, running_bpp, running_perc, running_auxloss, min_loss))
+        if epoch%image_steps==(image_steps-1):
+            net.eval()
+            res = net(iset[1].unsqueeze(0))[0].squeeze(0)
+            #if epoch%show_steps==0:
+                #show_tile(iset[1], net(iset[1].unsqueeze(0))[0].squeeze(0), size=5)
+            save_image(res, 'out/train%s/%d.png' % (name, epoch))
+            net.train()
 
-    if early_stop>250:
-        break
+        #if running_perc<0.032 and running_bpp<0.55:
+        #    print('good enough')
+        #    break
 
-    running_loss = 0.0
-    running_bpp = 0.0
-    running_perc = 0.0
-    running_auxloss = 0.0
+        if running_loss<min_loss:
+            early_stop = 0
+            min_loss = running_loss
+            torch.save(net, 'models/%s' % name)
+        else:
+            early_stop += 1
 
+        if early_stop>100:
+            break
+
+        running_loss = 0.0
+        running_bpp = 0.0
+        running_perc = 0.0
+        running_auxloss = 0.0
+except KeyboardInterrupt:
+    print('interrupted!')
 
 #%%
 net = torch.load('models/%s' % name)
@@ -255,21 +276,24 @@ test = DataLoader(iset, batch_size=batch_size, shuffle=False)
 
 net.entropy_bottleneck.update()
 collect = torch.Tensor()
-f = open('out/test-%s.bytes' % name, 'ab')
 for i,t in enumerate(test,0):
-    o = net(t)[0].detach().cpu().clip(0.0,1.0)
-    collect = torch.concat([collect,o])
+    #o = net(t)[0]
+    #collect = torch.concat([collect,o.detach().cpu().clip(0.0,1.0)])
 
     # From https://github.com/InterDigitalInc/CompressAI/blob/master/compressai/models/base.py
-    e = net.encode(iset[0].unsqueeze(0))
-    bytes = net.entropy_bottleneck.compress(e)[0]
-    f.write(bytes)
+    e = net.encode(t)
+    bs = net.entropy_bottleneck.compress(e)
+#%%
+f = open('out/test-%s.bytes' % name, 'ab')
+for b in bs:
+    f.write(b)
 f.close()
 
 #%%
+f = open('out/test-%s.bytes' % name, 'rb')
 
-#show_img(iset, iset[:], size=15)
-#show_img(iset, collect, size=15)
+#%%
+
 h = iset.htiles*tile
 w = iset.wtiles*tile
 merged = collect.view(iset.htiles,iset.wtiles,3,tile,tile).permute(2,0,3,1,4)
