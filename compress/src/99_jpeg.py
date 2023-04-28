@@ -73,7 +73,10 @@ orig = ImData('out/test-orig.png', Format.PIL)
 #jpeg70 = ImData('out/test-jpeg70.jpg', Format.PIL)
 #jpeg50 = ImData('out/test-jpeg50.jpg', Format.PIL)
 #jpeg20 = ImData('out/test-jpeg20.jpg', Format.PIL)
-zero3c = ImData('test-03c', Format.PARQUET)
+#zero3c = ImData('test-03c', Format.PARQUET)
+#zero3d = ImData('test-03d', Format.PARQUET)
+#zero3e = ImData('test-03e', Format.PARQUET)
+zero3f = ImData('test-03f', Format.PARQUET)
 
 #print("orig: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, orig))
 #print("jpeg95: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg95))
@@ -81,12 +84,25 @@ zero3c = ImData('test-03c', Format.PARQUET)
 #print("jpeg50: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg50))
 #print("jpeg20: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, jpeg20))
 #print("02a: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero2a))
-print("03c: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero3c))
+#print("03c: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero3c))
+#print("03d: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero3d))
+#print("03e: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero3e))
+print("03f: psnr=%.2f, ms-ssim=%.6f, rate=%.4f, bpp=%.2f" % get_metrics(orig, zero3f))
 
 #orig: psnr=inf, ms-ssim=1.000000, rate=1.0000, bpp=9.53
 #jpeg95: psnr=40.87, ms-ssim=0.990100, rate=0.1568, bpp=1.49
 #02a: psnr=38.21, ms-ssim=0.979415, rate=0.0056, bpp=0.05 ???? questionable
 #03c: psnr=37.69, ms-ssim=0.979726, rate=0.0187, bpp=0.18 -> good
 #jpeg70: psnr=37.24, ms-ssim=0.973139, rate=0.0416, bpp=0.40
+#03e: psnr=36.41, ms-ssim=0.971706, rate=0.0146, bpp=0.14
+#03d: psnr=33.96, ms-ssim=0.961352, rate=0.0133, bpp=0.13
 #jpeg50: psnr=36.36, ms-ssim=0.963297, rate=0.0299, bpp=0.29
 #jpeg20: psnr=34.05, ms-ssim=0.922156, rate=0.0189, bpp=0.18
+
+# N=64 = 1,782,933
+# N=32 =   476,821
+
+#03c: N=32, tile=128, bpp=0.05, ssim, lr=0.01
+#03d: N=64, tile=128, bpp=0.07, ssim, lr=0.001
+#03e: N=64, tile=128, bpp=0.0007, mse, lr=0.001
+#03f: N=32, tile=128, bpp=0.0007, mse, lr=0.001

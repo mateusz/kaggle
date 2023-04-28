@@ -20,7 +20,7 @@ import src.lib as slib
 torch.manual_seed(1)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-name = '03c'
+name = '03f'
 
 #%%
 class ImgSet(Dataset):
@@ -130,12 +130,16 @@ def show_tile(tile, tile2, size=5):
     ax[1].imshow(tile2)
     plt.show()
 
-
+def clip_gradient(optimizer, grad_clip):
+    for group in optimizer.param_groups:
+        for param in group["params"]:
+            if param.grad is not None:
+                param.grad.data.clamp_(-grad_clip, grad_clip)
 
 #%%
 
 opt = torch.optim.Adam((net.encode+net.decode).parameters(), lr=0.001)
-auxopt = torch.optim.Adam(net.entropy_bottleneck.parameters(), lr=0.001)
+auxopt = torch.optim.Adam(net.entropy_bottleneck.parameters(), lr=0.01)
 
 
 # min 161x161
@@ -146,6 +150,8 @@ msssim = MS_SSIM(data_range=1, size_average=True, channel=3)
 # Has edge artifacts, but reproduces better detail (e.g. webb artifacts)
 # seems the best
 # Good loss here is around 0.02-0.03
+# One of the earlier papers (end to end?) mentions ssim/ms-sim can struggle with color pictures
+# But actually both SSIM and MSE produce cyan-colored stars here.
 ssim = SSIM(data_range=1, size_average=True, channel=3)
 # maybe try mse+ssim?
 
@@ -158,7 +164,7 @@ perc_w = 1.0
 # for ssim, 0.0001 produces 1.87bpp
 # for msssimg, 0.001 produces 1.33bpp
 # for ssim, 0.01 produces 0.5bpp
-bpp_w = 0.05
+bpp_w = 0.0007
 
 # ssim works really well
 # but need to solve tiling issue (overlap?)
@@ -185,9 +191,9 @@ try:
 
             x_hat, y_likelihoods = net(t)
 
-            perc_loss = 1.0 - ssim(t, x_hat)
+            #perc_loss = 1.0 - ssim(t, x_hat)
             #perc_loss = 1.0 - msssim(t, x_hat)
-            #perc_loss = mse(t, x_hat)
+            perc_loss = mse(t, x_hat)
 
             N, _, H, W = t.size()
             num_pixels = N * H * W
@@ -196,6 +202,7 @@ try:
             loss = perc_w*perc_loss + bpp_w*bpp_loss
 
             loss.backward()
+            clip_gradient(opt, 1)
             opt.step()
 
             auxloss = net.entropy_bottleneck.loss()
@@ -233,7 +240,7 @@ try:
         else:
             early_stop += 1
 
-        if early_stop>20:
+        if early_stop>5:
             break
 
         running_loss = 0.0
@@ -249,8 +256,6 @@ except KeyboardInterrupt:
 
 #%%
 
-# Joint training gives better result
-"""
 min_loss = 9999999
 net = torch.load('models/%s' % name)
 net = net.to(device)
@@ -283,13 +288,12 @@ try:
         else:
             early_stop += 1
 
-        if early_stop>5:
+        if early_stop>3:
             break
 
         running_loss = 0.0
 except KeyboardInterrupt:
     print('interrupted!')
-"""
 
 #%%
 net = torch.load('models/%s' % name)
@@ -318,7 +322,7 @@ for i,t in enumerate(test,0):
         shape = e.size()[2:]
     for b in bs:
         collect = collect.append({'chunk': b}, ignore_index=True)
-collect.to_parquet('out/test-%s.parquet' % name)
+collect.to_parquet('out/test-%s.parquet' % name, compression=None)
 #%%
 
 collect_out = slib.decompress_file(net, 'out/test-%s.parquet' % name, shape, batch_size)
