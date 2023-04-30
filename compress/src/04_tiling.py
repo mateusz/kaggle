@@ -20,60 +20,73 @@ import src.lib as slib
 torch.manual_seed(1)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-name = '03f'
+name = '04a'
 
 #%%
 class ImgSet(Dataset):
-    def __init__(self, path, tile=256, wtiles=-1, htiles=-1):
+    def __init__(self, path, tile=256, pad=4):
         super().__init__()
+        self.tile=tile
+        self.pad=pad
 
         image = cv2.imread(path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        w,h=image.shape[0:2]
-        padw = math.ceil(w/tile)*tile-w
-        padh = math.ceil(h/tile)*tile-h
-        image = cv2.copyMakeBorder(image, 0, padw, 0, padh, cv2.BORDER_CONSTANT, value=[0,0,0])
-
         transform = transforms.Compose([
             transforms.ToTensor()
         ])
         img = transform(image)
-        # tile image
-        img = img.unfold(1, tile, tile).unfold(2, tile, tile)
-        self.htiles = img.shape[1]
-        self.wtiles = img.shape[2]
 
-        if wtiles>0:
-            self.wtiles = wtiles
-        if htiles>0:
-            self.htiles = htiles
-        self.img = img[:,:htiles,:wtiles].flatten(1,2).permute(1,0,2,3).to(device)
+        self.tiler = slib.Tiler(img, tile, pad).to(device)
+        self.img = self.tiler.unfold()
 
     def __len__(self):
         return len(self.img)
 
     def __getitem__(self, idx):
         return self.img[idx]
+    
+    def save(self, img, path):
+        folded = self.tiler.fold(img)
+        save_image(folded, path)
+
+    def show(self, img, size=5):
+        folded = self.tiler.fold(img)
+
+        tile = folded.permute(1,2,0).clamp(0.0,1.0).detach().cpu()
+
+        fig,ax = plt.subplots(figsize=(size,size))
+        ax.axis('off')
+        ax.imshow(tile)
+        plt.show()
 
 tile=128
-wtiles=32
-htiles=32
 batch_size=16
-# 256 tiles (with batch 8) converged
-iset = ImgSet('data/STScI-01GA76Q01D09HFEV174SVMQDMV.png', tile=tile, wtiles=wtiles, htiles=htiles)
-print(iset.img.shape, iset.wtiles, iset.htiles)
+pad=8
+iset = ImgSet('data/wH7sq3u.jpg', tile=tile, pad=pad)
+print(iset.img.shape)
 
 train = DataLoader(iset, batch_size=batch_size, shuffle=True)
 print(len(train))
 
+def show_tile(tile, size=5):
+    # Prep for pyplot
+    tile = tile.permute(1,2,0).clamp(0.0,1.0).detach().cpu()
+
+    fig,ax = plt.subplots(figsize=(size,size))
+    ax.axis('off')
+    ax.imshow(tile)
+    plt.show()
+
+#iset.show(iset.img)
+
 #%%
 
 class Network(nn.Module):
-    def __init__(self, N=128):
+    def __init__(self, N=128, pad=2):
         super().__init__()
         self.entropy_bottleneck = EntropyBottleneck(N)
         self.encode = nn.Sequential(
-            nn.Conv2d(3, N, stride=2, kernel_size=5, padding=2),
+            nn.Conv2d(3, N, stride=2, kernel_size=pad*2+1, padding=pad),
             #nn.ReLU(inplace=True),
             GDN(N),
             nn.Conv2d(N, N, stride=2, kernel_size=5, padding=2),
@@ -98,37 +111,10 @@ class Network(nn.Module):
        x_hat = self.decode(y_hat)
        return x_hat, y_likelihoods
 
-net = Network(N=32).to(device)
+net = Network(N=32, pad=pad).to(device)
 print(net(iset[0].unsqueeze(0))[0].shape)
 print(sum([l.numel() for l in net.parameters()]))
 min_loss = 9999999
-
-def show_img(iset, data, size=5):
-    h = iset.htiles*tile
-    w = iset.wtiles*tile
-    # Reshape into m x n
-    merged = data.view(iset.htiles,iset.wtiles,3,tile,tile).permute(2,0,3,1,4)
-    # Merge tiles
-    merged = merged.reshape(3, h, w)
-    # Prep for pyplot
-    merged = merged.detach().cpu().permute(1,2,0)
-
-    fig,ax = plt.subplots(figsize=(size,size))
-    ax.axis('off')
-    ax.imshow(merged)
-    plt.show()
-
-def show_tile(tile, tile2, size=5):
-    # Prep for pyplot
-    tile = tile.permute(1,2,0).clamp(0.0,1.0).detach().cpu()
-    tile2 = tile2.permute(1,2,0).clamp(0.0,1.0).detach().cpu()
-
-    fig,ax = plt.subplots(1,2,figsize=(size*2,size))
-    ax[0].axis('off')
-    ax[1].axis('off')
-    ax[0].imshow(tile)
-    ax[1].imshow(tile2)
-    plt.show()
 
 def clip_gradient(optimizer, grad_clip):
     for group in optimizer.param_groups:
@@ -164,7 +150,7 @@ perc_w = 1.0
 # for ssim, 0.0001 produces 1.87bpp
 # for msssimg, 0.001 produces 1.33bpp
 # for ssim, 0.01 produces 0.5bpp
-bpp_w = 0.0007
+bpp_w = 0.07
 
 # ssim works really well
 # but need to solve tiling issue (overlap?)
@@ -191,9 +177,9 @@ try:
 
             x_hat, y_likelihoods = net(t)
 
-            #perc_loss = 1.0 - ssim(t, x_hat)
+            perc_loss = 1.0 - ssim(t, x_hat)
             #perc_loss = 1.0 - msssim(t, x_hat)
-            perc_loss = mse(t, x_hat)
+            #perc_loss = mse(t, x_hat)
 
             N, _, H, W = t.size()
             num_pixels = N * H * W
@@ -225,7 +211,7 @@ try:
             net.eval()
             res = net(iset[1].unsqueeze(0))[0].squeeze(0)
             #if epoch%show_steps==0:
-                #show_tile(iset[1], net(iset[1].unsqueeze(0))[0].squeeze(0), size=5)
+                #compare_tiles(iset[1], net(iset[1].unsqueeze(0))[0].squeeze(0), size=5)
             save_image(res, 'out/train%s/%d.png' % (name, epoch))
             net.train()
 
@@ -326,9 +312,6 @@ for i,t in enumerate(test,0):
 collect.to_parquet('out/test-%s.parquet' % name, compression=None)
 #%%
 
-collect_out = slib.decompress_file(net, 'out/test-%s.parquet' % name, shape, batch_size)
-h = iset.htiles*tile
-w = iset.wtiles*tile
-merged = collect_out.view(iset.htiles,iset.wtiles,3,tile,tile).permute(2,0,3,1,4)
-merged = merged.reshape(3, h, w)
-save_image(merged, 'out/test-%s.png' % name)
+collect_out = slib.decompress_file(net, 'out/test-%s.parquet' % name, shape, batch_size).to(device)
+iset.save(collect_out, 'out/test.png')
+#save_img(iset, collect_out, 'out/test-%s.png' % name)
