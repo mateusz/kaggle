@@ -32,11 +32,12 @@ def show_tile(tile, size=5):
     plt.show()
 
 class Tiler():
-    def __init__(self, input, kern, overlap):
+    def __init__(self, input, kern, overlap, deadzone):
         super().__init__()
         self.device = 'cpu'
         self.kern = kern
         self.overlap = overlap
+        self.deadzone = deadzone
         self.h_edge = input.size(1)
         self.w_edge = input.size(2)
         self.ch = input.size(0)
@@ -84,25 +85,33 @@ class Tiler():
         core_size = self.kern-2*self.overlap
         w=torch.ones(self.ch, core_size, core_size).to(self.device)
         # Step through interpolation
-        for ring in torch.linspace(1.0, 0.0, self.overlap+2)[1:-1]:
+        for i in range(0, self.deadzone, 1):
+            w = F.pad(w, (1,1,1,1), "constant", 1.0)
+
+        for ring in torch.linspace(1.0, 0.0, self.overlap-(2*self.deadzone)+2)[1:-1]:
             w = F.pad(w, (1,1,1,1), "constant", ring)
+
+        for i in range(0, self.deadzone, 1):
+            w = F.pad(w, (1,1,1,1), "constant", 0.0)
 
         # Repeat tile mask over all batches.
         w = w.unsqueeze(0).repeat(self.tile_count,1,1,1)
 
         # Fold and re-unfold to deal with multiple or no overlaps.
-        wfolded = w.reshape(self.tile_count, -1).permute(1,0)
-        wfolded = F.fold(wfolded, output_size=(self.h_edge,self.w_edge), kernel_size=self.kern, stride=self.stride)
+        #wfolded = w.reshape(self.tile_count, -1).permute(1,0)
+        #wfolded = F.fold(wfolded, output_size=(self.h_edge,self.w_edge), kernel_size=self.kern, stride=self.stride)
         
-        wunfolded = F.unfold(wfolded, kernel_size=self.kern, stride=self.stride)
-        wunfolded = wunfolded.permute(1,0).reshape(-1,self.ch,self.kern,self.kern)
+        #wunfolded = F.unfold(wfolded, kernel_size=self.kern, stride=self.stride)
+        #wunfolded = wunfolded.permute(1,0).reshape(-1,self.ch,self.kern,self.kern)
 
-        return w/wunfolded
+        #return w/wunfolded
+        return w
 
     def fold(self, data):
         w = self.get_weights()
         
         folded = data*w
+        print(folded[:,0])
         folded = folded.reshape(self.tile_count, -1).permute(1,0)
         folded = F.fold(folded, output_size=(self.h_edge,self.w_edge), kernel_size=self.kern, stride=self.stride)
 
@@ -116,12 +125,13 @@ transform = transforms.Compose([
 ])
 img = transform(image)
 
-overlap=2
-kern=8
+overlap=8
+deadzone=2
+kern=32
 #input = torch.randn(ch, hedge, wedge)
 input = img
 
-til = Tiler(input, kern, overlap)
+til = Tiler(input, kern, overlap, deadzone)
 #show_tile(til.data, 5)
 d = til.unfold()
 output = til.fold(d)

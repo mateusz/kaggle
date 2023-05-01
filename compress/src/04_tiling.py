@@ -24,10 +24,11 @@ name = '04a'
 
 #%%
 class ImgSet(Dataset):
-    def __init__(self, path, tile=256, pad=4):
+    def __init__(self, path, tile=256, pad=4, deadzone=2):
         super().__init__()
         self.tile=tile
         self.pad=pad
+        self.deadzone=deadzone
 
         image = cv2.imread(path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -36,7 +37,7 @@ class ImgSet(Dataset):
         ])
         img = transform(image)
 
-        self.tiler = slib.Tiler(img, tile, pad).to(device)
+        self.tiler = slib.Tiler(img, tile, pad, deadzone).to(device)
         self.img = self.tiler.unfold()
 
     def __len__(self):
@@ -61,8 +62,9 @@ class ImgSet(Dataset):
 
 tile=128
 batch_size=16
-pad=8
-iset = ImgSet('data/wH7sq3u.jpg', tile=tile, pad=pad)
+pad=12
+deadzone=4
+iset = ImgSet('data/wH7sq3u.jpg', tile=tile, pad=pad, deadzone=deadzone)
 print(iset.img.shape)
 
 train = DataLoader(iset, batch_size=batch_size, shuffle=True)
